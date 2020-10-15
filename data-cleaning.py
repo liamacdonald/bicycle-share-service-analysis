@@ -7,7 +7,7 @@ from datetime import timedelta
 from datetime import time
 import glob
 import requests
-from json import JSONDecodeError
+import json
 
 ## LOOP THROUGH DATA FILES AND MAKE ON DATAFRAME WITH ALL RIDES
 
@@ -43,31 +43,23 @@ station = pd.read_csv(r'C:\Users\liama\OneDrive\data_projects\bicycle-share-mont
 station.columns = ['station_code','name','lat','long']
 del station['name']
 
-## DEFINE A FUNCTION THAT WILL RETRIEVE ELEVATION FROM the open-elevation api
 
-def get_elevation(lat, long):
-    query = ('https://api.open-elevation.com/api/v1/lookup'
-             f'?locations={lat},{long}')
-    r = requests.get(query).json()  # json object, various ways you can extract value
-    # one approach is to use pandas json functionality:
-    elevation = pd.io.json.json_normalize(r, 'results')['elevation'].values[0]
-    return elevation
+## Create the json file that will contain lat on long data
+
+data = {}
+data['locations'] = []
+for i in station.index:
+    data['locations'].append({
+        'latitude': station.loc[i,'lat'],
+        'longitude': station.loc[i,'long']
+        })
+
+## Request the elevation data from open-elevation
+url = 'https://api.open-elevation.com/api/v1/lookup'
+headers = {'Accept' : 'application/json', 'Content-Type' : 'application/json'}
+r = requests.post(url, data=data, headers=headers).json()
 
 
-## INITIALIZE THE ALTITUDE COLUMN AS NaN values
-station['altitude'] = np.NaN
-
-## While loop continues as long as there are NaN values in the altitude column
-## This is necessary because the code fails to access the api and pull data resulting in random errors
-while station['altitude'].isnull().any():
-    ## The for loop goes through each row that has a null altitude value and tries to retrieve it but continues if there is an error
-    for i in station[station['altitude'].isnull()].index:
-        try:
-            station.loc[i,'altitude'] = get_elevation(station.loc[i,'lat'],station.loc[i,'long'])
-            print('success' + str(i))
-        except JSONDecodeError:
-            print('failed' + str(i))
-            continue
 
 
 ## Write the file to elevation.csv to save it 
