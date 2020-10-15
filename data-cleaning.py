@@ -57,7 +57,13 @@ for i in station.index:
 ## Request the elevation data from open-elevation
 url = 'https://api.open-elevation.com/api/v1/lookup'
 headers = {'Accept' : 'application/json', 'Content-Type' : 'application/json'}
-r = requests.post(url, data=data, headers=headers).json()
+r = requests.post(url, data=json.dumps(data), headers=headers).json()
+
+## Create the altitude column in station and fill it with the elevation values
+station['altitude'] = 0
+for i in station.index:
+    station.loc[i,'altitude'] = pd.io.json.json_normalize(r, 'results')['elevation'].values[i]
+station.head()
 
 
 
