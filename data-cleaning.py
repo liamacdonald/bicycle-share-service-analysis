@@ -10,16 +10,14 @@ import requests
 import json
 import zipfile
 
-
-## Get the zipfile containing the data
-zf = zipfile.ZipFile('bike-data.zip')
-
-
-## Create dataframe list and put all the relevant data in that list
 df_list = []
-for file in (name for name in zf.namelist() if name[0] == 'O'):
-    df = pd.read_csv(zf.open(file))
-    df_list.append(df)
+## Loop through te zip files that contain the rider data.
+for path in glob.iglob('20*.zip'):
+    zf = zipfile.ZipFile(path)
+    ## Create dataframe list and put all the relevant data in that list
+    for file in (name for name in zf.namelist() if name[0] == 'O'):
+        df = pd.read_csv(zf.open(file))
+        df_list.append(df)
 
 
 ## Concat those dataframes into one data fram
@@ -42,7 +40,8 @@ rides_by_station = beginning.join(ending.set_index(['station_code','date']),on =
 
 
 ## BRING IN THE DATA FOR THE STATIONS THAT EXISTED IN 2019
-station = pd.read_csv(r'C:\Users\liama\OneDrive\data_projects\bicycle-share-montreal\Montreal2019\Stations_2019.csv')
+zf = zipfile.ZipFile('stations.zip')
+station = pd.read_csv(zf.open('Stations_2019.csv'))
 station.columns = ['station_code','name','lat','long']
 del station['name']
 
