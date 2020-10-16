@@ -8,22 +8,27 @@ from datetime import time
 import glob
 import requests
 import json
+import zipfile
 
-## LOOP THROUGH DATA FILES AND MAKE ON DATAFRAME WITH ALL RIDES
 
+## Get the zipfile containing the data
+zf = zipfile.ZipFile('bike-data.zip')
+
+
+## Create dataframe list and put all the relevant data in that list
 df_list = []
-
-for file in glob.iglob(r'C:\Users\liama\OneDrive\data_projects\bicycle-share-montreal\Montreal*\OD*.csv'):
-    df = pd.read_csv(file)
+for file in (name for name in zf.namelist() if name[0] == 'O'):
+    df = pd.read_csv(zf.open(file))
     df_list.append(df)
 
 
+## Concat those dataframes into one data fram
 df = pd.concat(df_list, sort = True).drop_duplicates().reset_index()
+
 
 ## REMOVE TIME FROM DATE VARIABLES
 df['start_date'] = df['start_date'].str[0:10]
 df['end_date'] = df['end_date'].str[0:10]
-
 
 
 ## AGGREGATE RIDE COUNTS BY DATE AND STATION CODE
@@ -36,16 +41,13 @@ rides_by_station = beginning.join(ending.set_index(['station_code','date']),on =
 
 
 
-
 ## BRING IN THE DATA FOR THE STATIONS THAT EXISTED IN 2019
-
 station = pd.read_csv(r'C:\Users\liama\OneDrive\data_projects\bicycle-share-montreal\Montreal2019\Stations_2019.csv')
 station.columns = ['station_code','name','lat','long']
 del station['name']
 
 
 ## Create the json file that will contain lat on long data
-
 data = {}
 data['locations'] = []
 for i in station.index:
@@ -54,10 +56,12 @@ for i in station.index:
         'longitude': station.loc[i,'long']
         })
 
+
 ## Request the elevation data from open-elevation
 url = 'https://api.open-elevation.com/api/v1/lookup'
 headers = {'Accept' : 'application/json', 'Content-Type' : 'application/json'}
 r = requests.post(url, data=json.dumps(data), headers=headers).json()
+
 
 ## Create the altitude column in station and fill it with the elevation values
 station['altitude'] = 0
@@ -66,10 +70,8 @@ for i in station.index:
 station.head()
 
 
-
-
-## Write the file to elevation.csv to save it 
-f = open('elevation.csv', 'w')
+## Write the file to stations which now contains all the station data
+f = open('station.csv', 'w')
 f.write(station.to_csv(index = False))
 f.close()
 
