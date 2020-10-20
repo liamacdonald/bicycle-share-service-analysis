@@ -106,6 +106,12 @@ f.close()
 
 ## Join the rides summary dataframe and the station dataframe to create the new elevation data
 rides = rides_by_station.join(station.set_index('station_code'),on = 'station_code')
+
+
+## A dummy variable 1 if saturday or sunday zero otherwise
+rides['weekend'] = np.where(pd.to_datetime(rides['date']).dt.dayofweek >= 5 , 1 ,0)
+
+## write the rides data to a csv
 f = open('rides_by_station.csv', 'w')
 f.write(rides.to_csv(index = False))
 f.close()
