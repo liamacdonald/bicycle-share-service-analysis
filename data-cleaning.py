@@ -32,27 +32,24 @@ df = pd.concat(df_list, sort = True).drop_duplicates().reset_index()
 ## Shouldn't be a huge issue only accounts for 3 rides on one day
 df = df[df['start_station_code'] != 'MTL-ECO5.1-01']
 
-## REMOVE TIME FROM DATE VARIABLES
+## Remove time from start date variable
 df['start_date'] = df['start_date'].str[0:10]
-df['end_date'] = df['end_date'].str[0:10]
 
 
-## AGGREGATE RIDE COUNTS BY DATE AND STATION CODE
-beginning = df.groupby(['start_station_code' , 'start_date'], as_index = False).index.count()
-ending = df.groupby(['end_station_code' , 'end_date'], as_index = False).index.count()
-columns = ['station_code', 'date', 'trips']
-beginning.columns = columns
-ending.columns = columns
-rides_by_station = beginning.join(ending.set_index(['station_code','date']),
-                                  on = ['station_code','date'],
-                                  lsuffix='_began',
-                                  rsuffix='_ended')
 
-## This is necessary for the join on station data later
-rides_by_station['station_code'] = rides_by_station['station_code'].astype(int)
+## Aggregate ride counts by date
+rides = df.groupby('start_date').index.count()
+rides.columns = ['date' ,'trips']
 
-## A few dates/station combos have no rides ended so fill these with 0 instead of NA
-rides_by_station['trips_ended'] = rides_by_station['trips_ended'].fillna(0)
+## A dummy variable 1 if saturday or sunday zero otherwise
+rides['weekend'] = np.where(pd.to_datetime(rides['date']).dt.dayofweek >= 5 , 1 ,0)
+rides['open_dates'] = rides.groupby('station_code').date.min()
+rides['month'] = pd.to_datetime(rides['date']).dt.month
+
+
+
+## Get the open date of each station by finding the first day there was rides at that station
+open_date = df.groupby('station_code').start_date.min()
 
 
 ## Bring in all station data
@@ -63,7 +60,6 @@ for file in zf.namelist():
     station.columns = ['station_code','name','lat','long']
     del station['name']
     df_list.append(station)
-
 
 ## Concat the station data and drop duplicates based on station code
 station = pd.concat(df_list, sort = True).drop_duplicates(subset='station_code', keep="first").reset_index()
@@ -98,18 +94,7 @@ while station['altitude'].isnull().any():
         continue
 
 
-## Write the file to stations which now contains all the station data, we could get this from the rides by station data but it makes sense to store it here in case we don't need rides
-## This file takes up almost no space
-f = open('station.csv', 'w')
-f.write(station.to_csv(index = False))
-f.close()
 
-## Join the rides summary dataframe and the station dataframe to create the new elevation data
-rides = rides_by_station.join(station.set_index('station_code'),on = 'station_code')
-
-
-## A dummy variable 1 if saturday or sunday zero otherwise
-rides['weekend'] = np.where(pd.to_datetime(rides['date']).dt.dayofweek >= 5 , 1 ,0)
 
 ## write the rides data to a csv
 f = open('rides_by_station.csv', 'w')
