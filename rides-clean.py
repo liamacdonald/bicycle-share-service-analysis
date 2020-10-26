@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 from datetime import datetime
 from datetime import timedelta
 from datetime import time
+from math import sin, cos, sqrt, atan2, radians
 import glob
 import requests
 import json
@@ -44,25 +45,41 @@ for path in glob.iglob('20*.zip'):
                       'end_station_id','end_station_name','end_station_lat','end_station_long',
                       'bike_id', 'user_type','birth_year','gender']
         df = df[['start_date','end_date','start_station_id' ,'start_station_lat','start_station_long',
-                 'end_station_id','end_station_id','end_station_lat','end_station_long']]
+                 'end_station_id','end_station_lat','end_station_long']]
         df_list.append(df)
         zf.close()
     os.remove(path)
 
 ## Concat the data frames
 df = pd.concat(df_list, sort = True).drop_duplicates().reset_index()
-error
-## This station code appears once in the data for 2019-08 need to figure out what it is but seems like a data error so dropping for now
-## Shouldn't be a huge issue only accounts for 3 rides on one day
-df['hod'] = pd.to_datetime(rides['start_date']).dt.month
-## REMOVE TIME FROM DATE VARIABLES
+
+## Create a variable for the hour of the day trips are taken
+df['hod'] = pd.to_datetime(df['start_date']).dt.hour
+
+## Remove the time from the date variables
 df['start_date'] = df['start_date'].str[0:10]
 df['end_date'] = df['end_date'].str[0:10]
 
-## AGGREGATE RIDE COUNTS BY DATE AND STATION CODE
+## Aggregate the rides to represent the number of rides from each station every hour of every day in the time frame
 rides = df.groupby(['start_station_id' , 'start_date','start_station_lat','start_station_long','hod'], as_index = False).index.count()
+rides.columns = ['start_station_id' , 'start_date','start_station_lat','start_station_long','hod','rides']
 
-location = df[['start_station_id','start_station_lat','start_station_long']].drop_duplicates().reset_index()
+## Create dummy variables for each day of the week, month of the year and hour of day
+for i in range(0,13):
+    name = 'month_' + str(i)
+    rides[name] = np.where(pd.to_datetime(rides['start_date']).dt.month == i , 1 , 0)
+    
+for i in range(0,7):
+    name = 'day_' + str(i)
+    rides[name] = np.where(pd.to_datetime(rides['start_date']).dt.dayofweek == i, 1 , 0)
+for i in range(0,24):
+    name = 'hod_' + str(i)
+    rides[name] = np.where(rides['hod'] == i, 1 , 0)
+rides = rides.drop(columns = ['hod'])
+
+## Create a location dataframe that will allow us to get altitude of each station
+location = df[['start_station_id','start_station_lat','start_station_long']].drop_duplicates().reset_index().drop(columns = ['index'])
+
 ## Create the json file that will contain lat on long data
 data = {}
 data['locations'] = []
@@ -90,10 +107,23 @@ while location['altitude'].isnull().any():
         print('failed')
         continue
 
+## Load transit data
+transit = pd.read_csv('NYC_Transit_Subway_Entrance_And_Exit_Data.csv')
+
+
+
 
 
 ## Join the rides summary dataframe and the station dataframe to create the new elevation data
-rides = rides.join(station.set_index('station_code'),on = 'station_code')
+rides = rides.join(location[['start_station_id','altitude']].set_index('start_station_id'),on = 'start_station_id')
+
+
+## Get the weather data and join it to rides data
+weather = pd.read_csv('ny_weather.csv')
+weather = weather[['DATE','AWND','PRCP','SNOW','SNWD','TMAX','TMIN']]
+weather.columns = ['start_date','wind_speed','precipitation','snow','snow_depth','max_temp','min_temp']
+rides = rides.join(weather.set_index('start_date'),on = 'start_date')
+
 
 ## write the rides data to a csv
 f = open('rides.csv', 'w')
