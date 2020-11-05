@@ -5,12 +5,13 @@ import matplotlib.pyplot as plt
 from datetime import datetime
 from datetime import timedelta
 from datetime import time
-from math import sin, cos, sqrt, atan2, radians
 import glob
 import requests
 import json
 import zipfile
 import os
+import math
+from sodapy import Socrata
 
 df_list = []
 
@@ -62,23 +63,32 @@ df['end_date'] = df['end_date'].str[0:10]
 
 ## Aggregate the rides to represent the number of rides from each station every hour of every day in the time frame
 rides = df.groupby(['start_station_id' , 'start_date','start_station_lat','start_station_long','hod'], as_index = False).index.count()
+rides_ended = df.groupby(['end_station_id' , 'end_date','end_station_lat','end_station_long','hod'], as_index = False).index.count()
 rides.columns = ['start_station_id' , 'start_date','start_station_lat','start_station_long','hod','rides']
+rides_ended.columns = ['end_station_id' , 'end_date','end_station_lat','end_station_long','hod','rides']
+
+## There are some problematic stations with location data outside new york
+## Ideally this would be based of lat long city limits but this deals with all the problems
+rides = rides[(rides['start_station_lat'] != 0) & (rides['start_station_id'] != 3036) &
+              (rides['start_station_id'] != 3650) & (rides['start_station_id'] != 3488) &
+              (rides['start_station_id'] != 3633)]
+rides_ended = rides_ended[(rides_ended['end_station_lat'] != 0) & (rides_ended['end_station_id'] != 3036) &
+              (rides_ended['end_station_id'] != 3650) & (rides_ended['end_station_id'] != 3488) &
+              (rides_ended['end_station_id'] != 3633)]
+
+
 
 ## Create dummy variables for each day of the week, month of the year and hour of day
-for i in range(0,13):
-    name = 'month_' + str(i)
-    rides[name] = np.where(pd.to_datetime(rides['start_date']).dt.month == i , 1 , 0)
-    
-for i in range(0,7):
-    name = 'day_' + str(i)
-    rides[name] = np.where(pd.to_datetime(rides['start_date']).dt.dayofweek == i, 1 , 0)
-for i in range(0,24):
-    name = 'hod_' + str(i)
-    rides[name] = np.where(rides['hod'] == i, 1 , 0)
-rides = rides.drop(columns = ['hod'])
+rides['month'] = pd.to_datetime(rides['start_date']).dt.month
+rides['dow'] = pd.to_datetime(rides['start_date']).dt.dayofweek 
+rides_ended['month'] = pd.to_datetime(rides_ended['end_date']).dt.month
+rides_ended['dow'] = pd.to_datetime(rides_ended['end_date']).dt.dayofweek 
+
+
 
 ## Create a location dataframe that will allow us to get altitude of each station
-location = df[['start_station_id','start_station_lat','start_station_long']].drop_duplicates().reset_index().drop(columns = ['index'])
+## We keep only the most up to date lat and long as these change over the dataset
+location = rides[['start_station_id','start_station_lat','start_station_long']].drop_duplicates(subset='start_station_id', keep='last').reset_index().drop(columns = ['index'])
 
 ## Create the json file that will contain lat on long data
 data = {}
@@ -108,24 +118,67 @@ while location['altitude'].isnull().any():
         continue
 
 ## Load transit data
-transit = pd.read_csv('NYC_Transit_Subway_Entrance_And_Exit_Data.csv')
+client = Socrata("data.ny.gov", None)
+
+results = client.get("i9wp-a4ja", limit=2000)
+transit = pd.DataFrame.from_records(results)
+transit = transit[['entrance_latitude' , 'entrance_longitude']]
+transit.columns = ['lat','long']
+transit['lat'] = transit['lat'].astype(float)
+transit['long'] = transit['long'].astype(float)
 
 
 
+## Create a distance variable for each bike station that gives distance to closest transit station
+def distance_between_points(lat1,long1,lat2,long2):
+    #Radius of the earth
+    R = 6373.0
+    ## Define differences
+    dlat = math.radians(lat2) - math.radians(lat1)
+    dlong = math.radians(long2) - math.radians(long1)
 
+    ## Distance between points formula
+    a = math.sin(dlat / 2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlong / 2)**2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    distance = R * c
+    return distance
+
+## Create distance to transit column
+location['distance_to_transit'] = np.nan
+
+## Loop through each station and find the closest transit
+for i in location.index:
+    print("loc: " + str(i))
+    distances = []
+
+    ## Loop through each transit station and find distance to particular bike station
+    for x in transit.index:
+        print("subway: " + str(x))
+        distances.append(distance_between_points(location.loc[i,'start_station_lat'],location.loc[i,'start_station_long'],
+                                                 transit.loc[x,'lat'],transit.loc[x,'long']))
+        
+    ## Set the distance to transit as the distance to the closet transit station
+    location.loc[i,'distance_to_transit'] = min(distances)
+    
+## Drop the lat and long columns, will bring these in through the station variable so that location table so only most up to date is included
+rides = rides.drop(columns = ['start_station_lat','start_station_long'])
 
 ## Join the rides summary dataframe and the station dataframe to create the new elevation data
-rides = rides.join(location[['start_station_id','altitude']].set_index('start_station_id'),on = 'start_station_id')
-
+rides = rides.join(location.set_index('start_station_id'),on = 'start_station_id')
+rides_ended = rides_ended.join(location.set_index('start_station_id'),on = 'end_station_id')
 
 ## Get the weather data and join it to rides data
 weather = pd.read_csv('ny_weather.csv')
 weather = weather[['DATE','AWND','PRCP','SNOW','SNWD','TMAX','TMIN']]
 weather.columns = ['start_date','wind_speed','precipitation','snow','snow_depth','max_temp','min_temp']
 rides = rides.join(weather.set_index('start_date'),on = 'start_date')
-
+rides_ended = rides.join(weather.set_index('start_date'),on = 'end_date')
 
 ## write the rides data to a csv
 f = open('rides.csv', 'w')
 f.write(rides.to_csv(index = False))
+f.close()
+
+f = open('rides_ended.csv', 'w')
+f.write(rides_ended.to_csv(index = False))
 f.close()
