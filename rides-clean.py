@@ -55,15 +55,25 @@ for path in glob.iglob('20*.zip'):
 df = pd.concat(df_list, sort = True).drop_duplicates().reset_index()
 
 ## Create a variable for the hour of the day trips are taken
+<<<<<<< HEAD
 df['start_hod'] = pd.to_datetime(df['start_date']).dt.hour
 df['end_hod'] = pd.to_datetime(df['end_date']).dt.hour
+=======
+df['hod'] = pd.to_datetime(df['start_date']).dt.hour
+
+>>>>>>> f72bf1471fc37c9f0ddd35c4a7fa5e8acd69aecb
 ## Remove the time from the date variables
 df['start_date'] = df['start_date'].str[0:10]
 df['end_date'] = df['end_date'].str[0:10]
 
 ## Aggregate the rides to represent the number of rides from each station every hour of every day in the time frame
+<<<<<<< HEAD
 rides = df.groupby(['start_station_id' , 'start_date','start_station_lat','start_station_long','start_hod'], as_index = False).index.count()
 rides_ended = df.groupby(['end_station_id' , 'end_date','end_station_lat','end_station_long','end_hod'], as_index = False).index.count()
+=======
+rides = df.groupby(['start_station_id' , 'start_date','start_station_lat','start_station_long','hod'], as_index = False).index.count()
+rides_ended = df.groupby(['end_station_id' , 'end_date','end_station_lat','end_station_long','hod'], as_index = False).index.count()
+>>>>>>> f72bf1471fc37c9f0ddd35c4a7fa5e8acd69aecb
 rides.columns = ['start_station_id' , 'start_date','start_station_lat','start_station_long','hod','rides']
 rides_ended.columns = ['end_station_id' , 'end_date','end_station_lat','end_station_long','hod','rides']
 
@@ -162,20 +172,31 @@ for i in location.index:
     
 ## Drop the lat and long columns, will bring these in through the station variable so that location table so only most up to date is included
 rides = rides.drop(columns = ['start_station_lat','start_station_long'])
+<<<<<<< HEAD
 rides_ended = rides_ended.drop(columns = ['start_station_lat','start_station_long'])
+=======
+
+>>>>>>> f72bf1471fc37c9f0ddd35c4a7fa5e8acd69aecb
 ## Join the rides summary dataframe and the station dataframe to create the new elevation data
 rides = rides.join(location.set_index('start_station_id'),on = 'start_station_id')
 rides_ended = rides_ended.join(location.set_index('start_station_id'),on = 'end_station_id')
 
+<<<<<<< HEAD
 ## This is done hear for ended because of the naming of the columns
 rides_ended = rides_ended.drop(columns = ['start_station_lat','start_station_long'])
 
+=======
+>>>>>>> f72bf1471fc37c9f0ddd35c4a7fa5e8acd69aecb
 ## Get the weather data and join it to rides data
 weather = pd.read_csv('ny_weather.csv')
 weather = weather[['DATE','AWND','PRCP','SNOW','SNWD','TMAX','TMIN']]
 weather.columns = ['start_date','wind_speed','precipitation','snow','snow_depth','max_temp','min_temp']
 rides = rides.join(weather.set_index('start_date'),on = 'start_date')
+<<<<<<< HEAD
 rides_ended = rides_ended.join(weather.set_index('start_date'),on = 'end_date')
+=======
+rides_ended = rides.join(weather.set_index('start_date'),on = 'end_date')
+>>>>>>> f72bf1471fc37c9f0ddd35c4a7fa5e8acd69aecb
 
 ## write the rides data to a csv
 f = open('rides.csv', 'w')
